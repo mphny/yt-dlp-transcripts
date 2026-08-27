@@ -35,13 +35,13 @@ def extract_video_id(url):
     # Handle youtube.com format
     parsed = urlparse(url)
     if parsed.hostname in ('www.youtube.com', 'youtube.com'):
+        path_parts=parsed.path.split('/')
         if parsed.path == '/watch':
             query = parse_qs(parsed.query)
             return query.get('v', [None])[0]
-        elif parsed.path.startswith('/embed/'):
-            return parsed.path.split('/')[2]
-        elif parsed.path.startswith('/v/'):
-            return parsed.path.split('/')[2]
+        elif parsed.path.startswith('/embed/') or parsed.path.startswith('/v/'):
+            if len(path_parts) > 2 and path_parts[2]:
+                return parsed.path.split('/')[2]
     
     # Fallback to regex
     patterns = [
@@ -80,8 +80,11 @@ def get_video_info(video_url, source_type=None, source_name=None, source_url=Non
             
             # Method 1: Try youtube-transcript-api first (usually better formatting)
             try:
-                transcript = YouTubeTranscriptApi.get_transcript(video_id)
-                transcript_text = ' '.join([entry['text'] for entry in transcript])
+                trans_api= YouTubeTranscriptApi()
+                transcript = trans_api.fetch(video_id)
+                for entry in transcript:
+                     if hasattr(entry, 'text'):
+                         transcript_text= transcript_text + "\n" + entry.text
                 print(f"  ✓ Transcript obtained via API")
             except Exception as e:
                 # Method 2: Fallback to yt-dlp's subtitle extraction
@@ -215,7 +218,7 @@ def get_video_info(video_url, source_type=None, source_name=None, source_url=Non
             return result
             
         except Exception as e:
-            print(f"Error processing video {video_url}: {str(e)}")
+            print(f"Error processing video {video_url}:\n\t{str(e)}")
             return None
 
 
@@ -224,7 +227,9 @@ def process_single_video(video_url, output_file):
     video_id = extract_video_id(video_url)
     if not video_id:
         print(f"Error: Could not extract video ID from {video_url}")
-        return
+        return('error')
+    if output_file == 'video_info.csv':
+        output_file = 'video_info-'+video_id+'.csv'
     
     # Check if already processed
     processed_videos = set()
@@ -235,7 +240,7 @@ def process_single_video(video_url, output_file):
     
     if video_id in processed_videos:
         print(f"Video already processed: {video_id}")
-        return
+        return(output_file)
     
     print(f"Processing video: {video_url}")
     video_info = get_video_info(video_url)
@@ -252,6 +257,8 @@ def process_single_video(video_url, output_file):
             
             writer.writerow(video_info)
             print(f"✓ Successfully processed: {video_info['title']}")
+        return(output_file)
+    return("No file created")
 
 
 def process_playlist(playlist_url, output_file):
@@ -461,7 +468,7 @@ def main(url, output):
     print(f"Detected URL type: {url_type}")
     
     if url_type == 'video':
-        process_single_video(url, output)
+        output=process_single_video(url, output)
     elif url_type == 'playlist':
         process_playlist(url, output)
     elif url_type == 'channel_videos':
@@ -482,3 +489,4 @@ def main(url, output):
 
 if __name__ == "__main__":
     main()
+
